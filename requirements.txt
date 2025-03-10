@@ -1,7 +1,10 @@
-Flask==2.2.2
-requests==2.28.2
-beautifulsoup4==4.11.1
-selenium==4.8.0
-pandas==1.5.2
-APScheduler==3.9.1
-webdriver-manager==3.8.6
+flask==3.0.0
+flask-limiter==3.3.0
+flask-cors==4.0.0
+python-dotenv==1.0.0
+requests==2.31.0
+beautifulsoup4==4.12.2
+pandas==2.0.3
+fake-useragent==1.2.1
+pyjwt==2.8.0
+croniter==1.4.1
