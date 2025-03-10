@@ -641,78 +641,139 @@ class Scheduler:
                 logger.error(f"Error processing task queue: {e}")
                 break
     
+    #Replaced recursive retry with a loop-based approach. BUg: Broken Retry Logic
+
     def _execute_task(self, task: Task):
-        """
-        Execute a scheduled task.
-        
-        Args:
-            task: Task to execute
-        """
         task_id = f"{task.name}-{int(time.time())}"
         logger.info(f"Executing task {task.name} (ID: {task_id})")
-        
+    
         start_time = time.time()
         error = None
         success = False
         result = None
-        retry_count = 0
-        
-        try:
-            # Update task state
-            with self.lock:
-                task.last_run = datetime.now()
-                task.run_count += 1
-                self._save_state()
-            
-            # Execute the task with timeout
-            result = task.function(*task.args, **task.kwargs)
-            
-            success = True
-            
-            logger.info(f"Task {task.name} (ID: {task_id}) completed successfully in {time.time() - start_time:.2f}s")
-        
-        except Exception as e:
-            error = str(e)
-            error_tb = traceback.format_exc()
-            logger.error(f"Task {task.name} (ID: {task_id}) failed: {e}\n{error_tb}")
-            
-            # Retry logic
-            if task.retry_on_failure and retry_count < task.max_retries:
-                retry_count += 1
-                logger.info(f"Retrying task {task.name} (attempt {retry_count}/{task.max_retries})")
-                
-                # Wait before retry
-                time.sleep(task.retry_delay)
-                
-                # Recursive retry with updated counter
+        retries_remaining = task.max_retries if task.retry_on_failure else 0
+    
+        while retries_remaining >= 0:
+            try:
+                # Update task state
                 with self.lock:
-                    task.retry_count += 1
+                    task.last_run = datetime.now()
+                    task.run_count += 1
                     self._save_state()
-                
-                # Note: In a production system, we might want to use a proper
-                # retry mechanism instead of recursion to avoid stack overflow
-        
-        finally:
-            # Update task state
-            with self.lock:
-                task.running = False
-                
-                if success:
-                    task.success_count += 1
-                    task.last_status = "success"
-                    task.last_error = None
-                else:
-                    task.failure_count += 1
-                    task.last_status = "failed"
-                    task.last_error = error
-                
-                # Calculate next run time
-                task.calculate_next_run()
-                
-                # Save updated state
-                self._save_state()
             
-            logger.info(f"Task {task.name} next run scheduled for {task.next_run}")
+                # Execute the task with timeout
+                result = task.function(*task.args, **task.kwargs)
+                success = True
+                break  # Exit loop on success
+            
+            except Exception as e:
+                error = str(e)
+                error_tb = traceback.format_exc()
+                logger.error(f"Task {task.name} (ID: {task_id}) failed: {e}\n{error_tb}")
+            
+                if retries_remaining > 0:
+                    logger.info(f"Retrying task {task.name} (attempt {task.max_retries - retries_remaining + 1}/{task.max_retries})")
+                    time.sleep(task.retry_delay)
+                    retries_remaining -= 1
+                    with self.lock:
+                        task.retry_count += 1
+                        self._save_state()
+                else:
+                    break  # No retries left
+    
+        # Update task state after execution/retries
+        with self.lock:
+            task.running = False
+            if success:
+                task.success_count += 1
+                task.last_status = "success"
+                task.last_error = None
+            else:
+                task.failure_count += 1
+                task.last_status = "failed"
+                task.last_error = error
+        
+            # Calculate next run time
+            task.calculate_next_run()
+            self._save_state()
+    
+        logger.info(f"Task {task.name} next run scheduled for {task.next_run}")
+
+
+
+
+    # def _execute_task(self, task: Task):
+    #     """
+    #     Execute a scheduled task.
+        
+    #     Args:
+    #         task: Task to execute
+    #     """
+    #     task_id = f"{task.name}-{int(time.time())}"
+    #     logger.info(f"Executing task {task.name} (ID: {task_id})")
+        
+    #     start_time = time.time()
+    #     error = None
+    #     success = False
+    #     result = None
+    #     retry_count = 0
+        
+    #     try:
+    #         # Update task state
+    #         with self.lock:
+    #             task.last_run = datetime.now()
+    #             task.run_count += 1
+    #             self._save_state()
+            
+    #         # Execute the task with timeout
+    #         result = task.function(*task.args, **task.kwargs)
+            
+    #         success = True
+            
+    #         logger.info(f"Task {task.name} (ID: {task_id}) completed successfully in {time.time() - start_time:.2f}s")
+        
+    #     except Exception as e:
+    #         error = str(e)
+    #         error_tb = traceback.format_exc()
+    #         logger.error(f"Task {task.name} (ID: {task_id}) failed: {e}\n{error_tb}")
+            
+    #         # Retry logic
+    #         if task.retry_on_failure and retry_count < task.max_retries:
+    #             retry_count += 1
+    #             logger.info(f"Retrying task {task.name} (attempt {retry_count}/{task.max_retries})")
+                
+    #             # Wait before retry
+    #             time.sleep(task.retry_delay)
+                
+    #             # Recursive retry with updated counter
+    #             with self.lock:
+    #                 task.retry_count += 1
+    #                 self._save_state()
+                
+    #             # Note: In a production system, we might want to use a proper
+    #             # retry mechanism instead of recursion to avoid stack overflow
+        
+    #     finally:
+    #         # Update task state
+    #         with self.lock:
+    #             task.running = False
+                
+    #             if success:
+    #                 task.success_count += 1
+    #                 task.last_status = "success"
+    #                 task.last_error = None
+    #             else:
+    #                 task.failure_count += 1
+    #                 task.last_status = "failed"
+    #                 task.last_error = error
+                
+    #             # Calculate next run time
+    #             task.calculate_next_run()
+                
+    #             # Save updated state
+    #             self._save_state()
+            
+    #         logger.info(f"Task {task.name} next run scheduled for {task.next_run}")
 
 # Example usage
 if __name__ == "__main__":
