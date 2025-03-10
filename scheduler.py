@@ -18,6 +18,7 @@ import queue
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import traceback
+from croniter import croniter
 
 # Configure logging
 logging.basicConfig(
@@ -90,50 +91,70 @@ class Task:
             self.next_run = next_run
         else:
             self.calculate_next_run()
-    
+
+    #Use croniter for accurate cron scheduling. Bug: Inaccurate cron scheduling
+
     def calculate_next_run(self, from_time: datetime = None) -> datetime:
-        """
-        Calculate the next run time based on interval or cron expression.
-        
-        Args:
-            from_time: Base time to calculate from (defaults to now)
-            
-        Returns:
-            Datetime of next scheduled run
-        """
         now = from_time or datetime.now()
-        
+
         if self.interval:
             self.next_run = now + timedelta(seconds=self.interval)
         elif self.cron_expression:
-            # Simplified cron implementation - only handles basic patterns
-            # Format: "minute hour day_of_month month day_of_week"
-            # For a production system, consider using a library like 'croniter'
             try:
-                parts = self.cron_expression.split()
-                if len(parts) != 5:
-                    raise ValueError("Invalid cron expression format")
-                
-                minute, hour, day, month, weekday = parts
-                
-                # Very simplified cron calculation for daily tasks
-                if minute == "0" and hour.isdigit() and day == "*" and month == "*":
-                    target = now.replace(hour=int(hour), minute=0, second=0, microsecond=0)
-                    if target <= now:
-                        target += timedelta(days=1)
-                    self.next_run = target
-                else:
-                    # Default fallback for complex patterns
-                    self.next_run = now + timedelta(days=1)
-                    logger.warning(f"Complex cron pattern for {self.name} - using simplified fallback")
+                base_time = from_time or datetime.now()
+                cron = croniter(self.cron_expression, base_time)
+                self.next_run = cron.get_next(datetime)
             except Exception as e:
                 logger.error(f"Error parsing cron expression for {self.name}: {e}")
-                self.next_run = now + timedelta(hours=24)  # Default fallback
+                self.next_run = now + timedelta(hours=24) # Default fallback
         else:
-            # Default to running once a day if no schedule specified
             self.next_run = now + timedelta(days=1)
         
         return self.next_run
+    
+    # def calculate_next_run(self, from_time: datetime = None) -> datetime:
+    #     """
+    #     Calculate the next run time based on interval or cron expression.
+        
+    #     Args:
+    #         from_time: Base time to calculate from (defaults to now)
+            
+    #     Returns:
+    #         Datetime of next scheduled run
+    #     """
+    #     now = from_time or datetime.now()
+        
+    #     if self.interval:
+    #         self.next_run = now + timedelta(seconds=self.interval)
+    #     elif self.cron_expression:
+    #         # Simplified cron implementation - only handles basic patterns
+    #         # Format: "minute hour day_of_month month day_of_week"
+    #         # For a production system, consider using a library like 'croniter'
+    #         try:
+    #             parts = self.cron_expression.split()
+    #             if len(parts) != 5:
+    #                 raise ValueError("Invalid cron expression format")
+                
+    #             minute, hour, day, month, weekday = parts
+                
+    #             # Very simplified cron calculation for daily tasks
+    #             if minute == "0" and hour.isdigit() and day == "*" and month == "*":
+    #                 target = now.replace(hour=int(hour), minute=0, second=0, microsecond=0)
+    #                 if target <= now:
+    #                     target += timedelta(days=1)
+    #                 self.next_run = target
+    #             else:
+    #                 # Default fallback for complex patterns
+    #                 self.next_run = now + timedelta(days=1)
+    #                 logger.warning(f"Complex cron pattern for {self.name} - using simplified fallback")
+    #         except Exception as e:
+    #             logger.error(f"Error parsing cron expression for {self.name}: {e}")
+    #             self.next_run = now + timedelta(hours=24)  # Default fallback
+    #     else:
+    #         # Default to running once a day if no schedule specified
+    #         self.next_run = now + timedelta(days=1)
+        
+    #     return self.next_run
     
     def get_status_dict(self) -> Dict[str, Any]:
         """Get task status as a dictionary for reporting."""
