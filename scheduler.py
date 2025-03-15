@@ -231,7 +231,7 @@ class Task:
         if data.get("last_run"):
             task.last_run = datetime.fromisoformat(data["last_run"])
         
-        # Restore statistics
+        # Restore statistic
         stats = data.get("stats", {})
         task.run_count = stats.get("run_count", 0)
         task.success_count = stats.get("success_count", 0)
